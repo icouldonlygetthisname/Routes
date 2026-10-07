@@ -20,37 +20,43 @@ local have_prof = {
 }
 local active_tracking = {}
 local profession_to_skill = {}
-local classic_spell_ids = {}
+
+-- Map the name of the first spell that exists on this client to value.
+-- Not every spell exists on every client (e.g. TBC Anniversary), and a nil key would error.
+local function MapSpellName(tbl, value, ...)
+	for i = 1, select("#", ...) do
+		local name = GetSpellName((select(i, ...)))
+		if name then
+			tbl[name] = value
+			return name
+		end
+	end
+end
 
 if GetProfessions then
-	profession_to_skill[GetSpellName(170691) or GetSpellName(9134)] = "Herbalism"
-	profession_to_skill[GetSpellName(2575)] = "Mining"
-	profession_to_skill[GetSpellName(7620) or GetSpellName(131476)] = "Fishing"
-	profession_to_skill[GetSpellName(4036)] = "ExtractGas"
-	if GetSpellName(78670) then
-		profession_to_skill[GetSpellName(78670)] = "Archaeology"
-	end
-else
-	classic_spell_ids = {
-		Herbalism = { 2366, 2368, 3570, 11993, 28695 },
-		Mining = { 2575, 2576, 3564, 10248, 29354 },
-		Fishing = { 7620, 7731, 7732, 18248, 33095 },
-		ExtractGas = { 30350 }, -- From Master Engineering
-	}
+	MapSpellName(profession_to_skill, "Herbalism", 170691, 9134)
+	MapSpellName(profession_to_skill, "Mining", 2575)
+	MapSpellName(profession_to_skill, "Fishing", 7620, 131476)
+	MapSpellName(profession_to_skill, "ExtractGas", 4036)
+	MapSpellName(profession_to_skill, "Archaeology", 78670)
 end
+
+-- Known spells per profession, used when GetProfessions is missing or doesn't report a profession
+-- Includes Find Herbs (2383) and Find Minerals (2580), which are learned with the profession
+local classic_spell_ids = {
+	Herbalism = { 2366, 2368, 3570, 11993, 28695, 2383 },
+	Mining = { 2575, 2576, 3564, 10248, 29354, 2580 },
+	Fishing = { 7620, 7731, 7732, 18248, 33095 },
+	ExtractGas = { 30350 }, -- From Master Engineering
+}
 
 local tracking_spells = {}
-tracking_spells[(GetSpellName(2580))] = "Mining"
-tracking_spells[(GetSpellName(2383))] = "Herbalism"
-tracking_spells[(GetSpellName(2481))] = "Treasure"
-
-if GetSpellName(43308) then
-	tracking_spells[(GetSpellName(43308))] = "Fishing"
-end
-
-if GetSpellName(167898) then
-	tracking_spells[(GetSpellName(167898))] = "Logging"
-end
+MapSpellName(tracking_spells, "Mining", 2580)
+MapSpellName(tracking_spells, "Herbalism", 2383)
+MapSpellName(tracking_spells, "Treasure", 2481)
+MapSpellName(tracking_spells, "Fishing", 43308)
+-- 1256697 is the generic Find Timber used in all zones, 167898 the old garrison-only one
+local logging_spell = MapSpellName(tracking_spells, "Logging", 1256697, 167898)
 
 function AutoShow:SKILL_LINES_CHANGED()
 	for k, v in pairs(have_prof) do
@@ -63,10 +69,11 @@ function AutoShow:SKILL_LINES_CHANGED()
 				have_prof[profession_to_skill[name]] = true
 			end
 		end
-	else
-		for professionName, spellIds in pairs(classic_spell_ids) do
+	end
+	for professionName, spellIds in pairs(classic_spell_ids) do
+		if not have_prof[professionName] then
 			for k, spellId in pairs(spellIds) do
-				if IsPlayerSpell(spellId) then
+				if IsPlayerSpell(spellId) or (IsSpellKnown and IsSpellKnown(spellId)) then
 					have_prof[professionName] = true
 					break
 				end
@@ -94,23 +101,20 @@ function AutoShow:MINIMAP_UPDATE_TRACKING()
 end
 
 function AutoShow:UNIT_AURA()
-	local miningName = GetSpellName(2580)
-	local herbalismName = GetSpellName(2383)
-	local treasureName = GetSpellName(2481)
 	local trackingTex = GetTrackingTexture()
 	if trackingTex then
 		if trackingTex == 136025 then -- Mining
-			active_tracking[tracking_spells[miningName]] = true
-			active_tracking[tracking_spells[herbalismName]] = false
-			active_tracking[tracking_spells[treasureName]] = false
+			active_tracking.Mining = true
+			active_tracking.Herbalism = false
+			active_tracking.Treasure = false
 		elseif trackingTex == 133939 then -- Herbalism
-			active_tracking[tracking_spells[miningName]] = false
-			active_tracking[tracking_spells[herbalismName]] = true
-			active_tracking[tracking_spells[treasureName]] = false
+			active_tracking.Mining = false
+			active_tracking.Herbalism = true
+			active_tracking.Treasure = false
 		elseif trackingTex == 135725 then -- Treasure
-			active_tracking[tracking_spells[miningName]] = false
-			active_tracking[tracking_spells[herbalismName]] = false
-			active_tracking[tracking_spells[treasureName]] = true
+			active_tracking.Mining = false
+			active_tracking.Herbalism = false
+			active_tracking.Treasure = true
 		end
 	else
 		active_tracking = {}
@@ -279,7 +283,7 @@ options = {
 					name = L["Logging"], type = "select",
 					desc = L["Routes with Timber"],
 					order = 800,
-					hidden = not GetSpellName(167898),
+					hidden = not logging_spell,
 					values = prof_options2,
 					arg = "Logging",
 				},
