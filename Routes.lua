@@ -1997,12 +1997,7 @@ function ConfigHandler:DoForeground(info)
 	local zone = tonumber(info[2])
 	local route = Routes.routekeys[zone][ info[3] ]
 	local t = db.routes[zone][route]
-	if #t.route > 724 then
-		-- Lua has 4mb limit on table size. 725x725 will result in a table of size 525625
-		-- 524288 (or 2^19) is the max as 8 bytes per entry will give exactly 4 Mb
-		Routes:Print(L["TOO_MANY_NODES_ERROR"])
-		return
-	end
+	-- routes with more than 724 nodes are handled by a different solver inside SolveTSP()
 	local taboos = {}
 	for tabooname, used in pairs(t.taboos) do
 		if used then
@@ -2028,10 +2023,6 @@ function ConfigHandler:DoBackground(info)
 	local zone = tonumber(info[2])
 	local route = Routes.routekeys[zone][ info[3] ]
 	local t = db.routes[zone][route]
-	if #t.route > 724 then
-		Routes:Print(L["TOO_MANY_NODES_ERROR"])
-		return
-	end
 	local taboos = {}
 	for tabooname, used in pairs(t.taboos) do
 		if used then

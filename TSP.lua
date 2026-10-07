@@ -86,6 +86,7 @@ local inf = math.huge
 local pathR = {}
 local lastpath
 local Routes = LibStub("AceAddon-3.0"):GetAddon("Routes")
+local L = LibStub("AceLocale-3.0"):GetLocale("Routes")
 local TSP = {}
 Routes.TSP = TSP
 
@@ -155,7 +156,7 @@ function TSPUpdateFrame:OnUpdate(elapsed)
 		self.finishFunc = nil
 		self.statusFunc = nil
 		self.nodes = nil
-		Routes:Print(Routes.L["The following error occured in the background path generation coroutine, please report to Grum or Xinhuan:"])
+		Routes:Print(L["The following error occured in the background path generation coroutine, please report to Grum or Xinhuan:"])
 		Routes:Print(path)
 	end
 end
@@ -182,7 +183,7 @@ function TSPClusterFrame:OnUpdate(elapsed)
 		self.co = nil
 		self.finishFunc = nil
 		self.statusFunc = nil
-		Routes:Print(Routes.L["The following error occured in the background clustering coroutine, please report to Grum or Xinhuan:"])
+		Routes:Print(L["The following error occured in the background clustering coroutine, please report to Grum or Xinhuan:"])
 		Routes:Print(nodes)
 	end
 end
@@ -223,6 +224,272 @@ end
 function TSP:SetStatusFunction(func)
 	assert(type(func) == "function", "SetStatusFunction() expected function in 1st argument, got "..type(func).." instead.")
 	TSPUpdateFrame.statusFunc = func
+end
+
+
+-----------------------------------
+-- Solver for routes that are too large for the ant colony solver.
+-- The ant colony solver needs NxN tables, and WoW limits a table to 2^19 entries,
+-- so it cannot handle more than 724 nodes. This builds a nearest neighbour tour and
+-- improves it with 2-opt moves restricted to each node's closest neighbours, which
+-- only needs memory proportional to the number of nodes.
+local MAX_ACO_NODES = 724
+local NUM_NEIGHBOURS = 10
+
+local function SolveLarge(nodes, metadata, taboos, zoneID, path, nonblocking, startTime)
+	local n = #nodes
+	local zoneW, zoneH = Routes.Dragons:GetZoneSize(zoneID)
+	local xs, ys = {}, {}
+	for i = 1, n do
+		xs[i], ys[i] = floor(nodes[i] / 10000) / 10000, (nodes[i] % 10000) / 10000
+	end
+
+	-- Flatten the taboo regions into a list of segments
+	local tsx, tsy, tex, tey = {}, {}, {}, {}
+	for m = 1, #taboos do
+		local taboo_data = taboos[m].route
+		local last_point = taboo_data[ #taboo_data ]
+		local sx, sy = floor(last_point / 10000) / 10000, (last_point % 10000) / 10000
+		for k = 1, #taboo_data do
+			local point = taboo_data[k]
+			local ex, ey = floor(point / 10000) / 10000, (point % 10000) / 10000
+			local s = #tsx + 1
+			tsx[s], tsy[s], tex[s], tey[s] = sx, sy, ex, ey
+			sx, sy = ex, ey
+		end
+	end
+	local numSegments = #tsx
+
+	-- Distance between node i and j, biased the same way as SolveTSP() when the line crosses a taboo region
+	local function dist(i, j)
+		local x1, y1, x2, y2 = xs[i], ys[i], xs[j], ys[j]
+		local w = (((x2 - x1)*zoneW)^2 + ((y2 - y1)*zoneH)^2)^0.5
+		if numSegments > 0 then
+			local dx, dy = x2-x1, y2-y1
+			for s = 1, numSegments do
+				local sx, sy, ex, ey = tsx[s], tsy[s], tex[s], tey[s]
+				local numer = dx*(sy-y1) - dy*(sx-x1)
+				local demon = dx*(sy-ey) + dy*(ex-sx)
+				if demon ~= 0 and dx ~= 0 then
+					local u = numer / demon
+					local t = (sx + (ex-sx)*u - x1)/dx
+					if u >= 0 and u <= 1 and t >= 0 and t <= 1 then
+						return w * 2 + zoneW
+					end
+				end
+			end
+		end
+		return w
+	end
+
+	-- Spatial grid with about 2 nodes per cell
+	local cellSize = (zoneW * zoneH * 2 / n) ^ 0.5
+	local gridMax = floor(zoneW / cellSize) + floor(zoneH / cellSize) + 2
+	local grid = {}
+	local gxs, gys = {}, {}
+	for i = 1, n do
+		local gx, gy = floor(xs[i] * zoneW / cellSize), floor(ys[i] * zoneH / cellSize)
+		gxs[i], gys[i] = gx, gy
+		local col = grid[gx]
+		if not col then
+			col = {}
+			grid[gx] = col
+		end
+		local cell = col[gy]
+		if not cell then
+			cell = {}
+			col[gy] = cell
+		end
+		cell[i] = true
+	end
+	-- Calls func(j) for every node in the ring of cells at distance r around node i
+	local function forRing(i, r, func)
+		local cx, cy = gxs[i], gys[i]
+		for gx = cx-r, cx+r do
+			local col = grid[gx]
+			if col then
+				local step = (gx == cx-r or gx == cx+r) and 1 or 2*r
+				for gy = cy-r, cy+r, step > 0 and step or 1 do
+					local cell = col[gy]
+					if cell then
+						for j in pairs(cell) do
+							func(j)
+						end
+					end
+				end
+			end
+		end
+	end
+	local function plainDist(i, j)
+		return (((xs[j] - xs[i])*zoneW)^2 + ((ys[j] - ys[i])*zoneH)^2)^0.5
+	end
+
+	-- Step 1: Find the closest neighbours of every node, these are the candidates for 2-opt moves
+	local neighbours = {}
+	for i = 1, n do
+		local list, dists = {}, {}
+		local function consider(j)
+			if j == i then return end
+			local d = plainDist(i, j)
+			local count = #list
+			if count == NUM_NEIGHBOURS and d >= dists[count] then return end
+			local k = count < NUM_NEIGHBOURS and count + 1 or count
+			while k > 1 and dists[k-1] > d do
+				list[k], dists[k] = list[k-1], dists[k-1]
+				k = k - 1
+			end
+			list[k], dists[k] = j, d
+		end
+		for r = 0, gridMax do
+			forRing(i, r, consider)
+			if #list == NUM_NEIGHBOURS and dists[#list] <= r * cellSize then break end
+		end
+		neighbours[i] = list
+		if nonblocking then
+			yield()
+		end
+	end
+
+	-- Step 2: Build a nearest neighbour tour, starting at the first node of the existing route
+	local tour, pos = {}, {}
+	local remaining = n
+	local cur = 1
+	for k = 1, n do
+		tour[k], pos[cur] = cur, k
+		grid[gxs[cur]][gys[cur]][cur] = nil
+		remaining = remaining - 1
+		if remaining == 0 then break end
+		local best, bestD = nil, inf
+		local function consider(j)
+			local d = plainDist(cur, j)
+			if d < bestD or (d == bestD and j < best) then
+				best, bestD = j, d
+			end
+		end
+		for r = 0, gridMax do
+			forRing(cur, r, consider)
+			if best and bestD <= r * cellSize then break end
+		end
+		cur = best
+		if nonblocking then
+			yield()
+		end
+	end
+
+	-- Step 3: Improve the tour with 2-opt moves until no improving move is left
+	local function reverse(i, j) -- reverse the tour from position i to j (inclusive, wrapping around)
+		local len = (j - i) % n + 1
+		if len * 2 > n then
+			-- reversing the other part of the tour gives the same route and is shorter
+			i, j = j % n + 1, (i - 2) % n + 1
+			len = n - len
+		end
+		for s = 1, floor(len / 2) do
+			local a, b = tour[i], tour[j]
+			tour[i], tour[j] = b, a
+			pos[b], pos[a] = i, j
+			i = i % n + 1
+			j = (j - 2) % n + 1
+		end
+	end
+
+	local queue, queued, tail = {}, {}, n
+	for i = 1, n do
+		queue[i] = tour[i]
+		queued[tour[i]] = true
+	end
+	local function push(a)
+		if not queued[a] then
+			queued[a] = true
+			tail = tail + 1
+			queue[tail] = a
+		end
+	end
+	local moves, head = 0, 1
+	local maxMoves = n * 50 -- safety net, 2-opt normally converges long before this
+	while head <= tail and moves < maxMoves do
+		local a = queue[head]
+		queue[head] = nil
+		head = head + 1
+		queued[a] = nil
+		local improved = true
+		while improved do
+			improved = false
+			local pa = pos[a]
+			local succA = tour[pa % n + 1]
+			local predA = tour[(pa - 2) % n + 1]
+			local dSucc, dPred = dist(a, succA), dist(predA, a)
+			local list = neighbours[a]
+			for m = 1, #list do
+				local c = list[m]
+				-- neighbours are sorted by plain distance, and the taboo bias only adds to it, so nothing better is left
+				if plainDist(a, c) >= dSucc and plainDist(a, c) >= dPred then break end
+				local dac = dist(a, c)
+				local pc = pos[c]
+				-- edges (a, succA) and (c, succC) become (a, c) and (succA, succC)
+				local succC = tour[pc % n + 1]
+				if dac < dSucc and c ~= succA and succC ~= a then
+					if dac + dist(succA, succC) < dSucc + dist(c, succC) - 1e-7 then
+						reverse(pa % n + 1, pc)
+						push(succA) push(c) push(succC)
+						improved = true
+						break
+					end
+				end
+				-- edges (predA, a) and (predC, c) become (predC, predA) and (a, c)
+				local predC = tour[(pc - 2) % n + 1]
+				if dac < dPred and c ~= predA and predC ~= a then
+					if dac + dist(predA, predC) < dPred + dist(predC, c) - 1e-7 then
+						reverse(pa, (pc - 2) % n + 1)
+						push(predA) push(c) push(predC)
+						improved = true
+						break
+					end
+				end
+			end
+			if improved then
+				moves = moves + 1
+			end
+		end
+		if nonblocking then
+			if TSPUpdateFrame.statusFunc and head % 50 == 0 then
+				TSPUpdateFrame.statusFunc(1, head / tail)
+			end
+			yield()
+		end
+	end
+
+	-- Step 4: Keep the original route if it is shorter (lengths include the taboo bias)
+	local newLength, oldLength = 0, 0
+	for i = 1, n do
+		newLength = newLength + dist(tour[i], tour[i % n + 1])
+		oldLength = oldLength + dist(i, i % n + 1)
+	end
+	if oldLength < newLength then
+		for i = 1, n do
+			path[i] = nodes[i]
+		end
+	else
+		local meta
+		if metadata then
+			meta = {}
+		end
+		for i = 1, n do
+			path[i] = nodes[tour[i]]
+			if metadata then
+				meta[i] = metadata[tour[i]]
+			end
+		end
+		metadata = meta
+	end
+
+	local length = TSP:PathLength(path, zoneID)
+	if nonblocking then
+		startTime = GetTime() - startTime
+	else
+		startTime = (debugprofilestop() - startTime) / 1000
+	end
+	return path, metadata, length, moves, startTime
 end
 
 
@@ -311,6 +578,10 @@ function TSP:SolveTSP(nodes, metadata, taboos, zoneID, parameters, path, nonbloc
 		startTime = GetTime()
 	else
 		startTime = debugprofilestop()
+	end
+	if numNodes > MAX_ACO_NODES then
+		-- too many nodes for the NxN tables used below
+		return SolveLarge(nodes, metadata, taboos, zoneID, path, nonblocking, startTime)
 	end
 	local zoneW, zoneH	= Routes.Dragons:GetZoneSize(zoneID)
 
@@ -909,40 +1180,94 @@ between clusters.
 -- 25 January 2008
 ]]
 function TSP:ClusterRoute(nodes, zoneID, radius, nonblocking)
-	local weight = {} -- weight matrix
-	local metadata = {} -- metadata after clustering
-
 	local numNodes = #nodes
 	local zoneW, zoneH = Routes.Dragons:GetZoneSize(zoneID)
 	local diameter = radius * 2
-	--local taboo = 0
 
-	-- Create a copy of the nodes[] table and use this instead of the original because we want to modify this table
-	local nodes2 = {}
-	for i = 1, numNodes do
-		nodes2[i] = nodes[i]
-		weight[i] = {} -- make weight[] a 2-dimensional table
+	-- Per cluster data, indexed by the original node index. Clusters that get merged away are
+	-- flagged inactive instead of being removed, so indices stay stable and the original order is kept.
+	local coords, metadata, nx, ny, active = {}, {}, {}, {}, {}
+	-- version[i] is bumped whenever cluster i changes, which invalidates its old taboos
+	local version = {}
+	-- nn[i] is the closest cluster cluster i may merge with, nnd[i] the distance to it
+	local nn, nnd = {}, {}
+	-- taboo[i][j] holds the versions of i and j for which merging them failed
+	local taboo = {}
+
+	-- Spatial grid with cells the size of the merge diameter, so only clusters
+	-- in the surrounding 3x3 cells need to be looked at for merge candidates
+	local cellSize = diameter > 0 and diameter or 1
+	local grid = {}
+	local function cellPos(i)
+		return floor(nx[i] * zoneW / cellSize), floor(ny[i] * zoneH / cellSize)
 	end
-	local nodes = nodes2
+	local function gridAdd(i)
+		local cx, cy = cellPos(i)
+		local key = cx * 1000000 + cy
+		local cell = grid[key]
+		if not cell then
+			cell = {}
+			grid[key] = cell
+		end
+		cell[i] = true
+	end
+	local function gridRemove(i)
+		local cx, cy = cellPos(i)
+		grid[cx * 1000000 + cy][i] = nil
+	end
 
-	-- Step 1: Generate the weight table
-	for i = 1, numNodes do
-		local coord = nodes[i]
-		local x, y = floor(coord / 10000) / 10000, (coord % 10000) / 10000
-		local w = weight[i]
-		w[i] = 0
-		for j = i+1, numNodes do
-			local coord = nodes[j]
-			local x2, y2 = floor(coord / 10000) / 10000, (coord % 10000) / 10000
-			w[j] = (((x2 - x)*zoneW)^2 + ((y2 - y)*zoneH)^2)^0.5 -- Calc distance between each node pair
-			weight[j][i] = true -- dummy value just to fill the lower half of the table so that tremove() will work on it
+	local function distance(i, j)
+		return (((nx[j] - nx[i])*zoneW)^2 + ((ny[j] - ny[i])*zoneH)^2)^0.5
+	end
+	local function isTabooed(i, j)
+		local t = taboo[i] and taboo[i][j]
+		return t and t[1] == version[i] and t[2] == version[j]
+	end
+	local function setTaboo(i, j)
+		taboo[i] = taboo[i] or {}
+		taboo[j] = taboo[j] or {}
+		taboo[i][j] = {version[i], version[j]}
+		taboo[j][i] = {version[j], version[i]}
+	end
+	-- is j a better merge candidate for i than its current one (ties go to the lower index)
+	local function isCloser(i, j, d)
+		return d <= diameter and (d < nnd[i] or (d == nnd[i] and j < nn[i])) and not isTabooed(i, j)
+	end
+	local function findNearest(i)
+		nn[i], nnd[i] = nil, inf
+		local cx, cy = cellPos(i)
+		for gx = cx-1, cx+1 do
+			for gy = cy-1, cy+1 do
+				local cell = grid[gx * 1000000 + gy]
+				if cell then
+					for j in pairs(cell) do
+						if j ~= i then
+							local d = distance(i, j)
+							if isCloser(i, j, d) then
+								nn[i], nnd[i] = j, d
+							end
+						end
+					end
+				end
+			end
 		end
 	end
 
-	-- Step 2: Generate the initial metadata tables
+	-- Step 1: Setup the clusters, one per node, and find their closest neighbours
 	for i = 1, numNodes do
-		metadata[i] = {}
-		metadata[i][1] = nodes[i]
+		local coord = nodes[i]
+		coords[i] = coord
+		metadata[i] = { coord }
+		nx[i], ny[i] = floor(coord / 10000) / 10000, (coord % 10000) / 10000
+		active[i] = true
+		version[i] = 0
+		gridAdd(i)
+	end
+	for i = 1, numNodes do
+		findNearest(i)
+		if nonblocking then
+			yield()
+		end
 	end
 
 	-- ensure one yield is always called
@@ -950,94 +1275,83 @@ function TSP:ClusterRoute(nodes, zoneID, radius, nonblocking)
 		coroutine.yield()
 	end
 
-	-- Step 5: ...and loop until there is no such pair of nodes
+	-- Step 4: ...and loop until there is no such pair of nodes
 	while true do
-		-- Step 3: Find the closest pair of nodes within the merge radius
-		local smallestDist = inf
-		local node1, node2
-		for i = 1, numNodes-1 do
-			local w = weight[i]
-			for j = i+1, numNodes do
-				local w2 = w[j]
-				if w2 <= diameter and w2 < smallestDist then
-					smallestDist = w2
-					node1 = i
-					node2 = j
-				end
+		-- Step 2: Find the closest pair of nodes within the merge radius
+		local node1, smallestDist = nil, inf
+		for i = 1, numNodes do
+			if active[i] and nnd[i] < smallestDist then
+				node1, smallestDist = i, nnd[i]
 			end
 		end
-		-- Step 4: Merge node2 into node1...
-		if node1 then
-			local m1, m2 = metadata[node1], metadata[node2]
-			local node1num, node2num = #m1, #m2
-			local totalnum = node1num + node2num
-			-- Calculate the new centroid of node1
-			local n1, n2 = nodes[node1], nodes[node2]
-			local node1x = ( floor(n1 / 10000) / 10000 * node1num + floor(n2 / 10000) / 10000 * node2num ) / totalnum
-			local node1y = ( (n1 % 10000) / 10000 * node1num + (n2 % 10000) / 10000 * node2num ) / totalnum
-			-- Calculate the new coord from the new (x,y)
-			local coord = floor(node1x * 10000 + 0.5) * 10000 + floor(node1y * 10000 + 0.5)
-			node1x, node1y = floor(coord / 10000) / 10000, (coord % 10000) / 10000 -- to round off the coordinate
-			-- Check that the merged point is valid
-			for i = 1, node1num do
-				local coord = m1[i]
-				local x, y = floor(coord / 10000) / 10000, (coord % 10000) / 10000
-				local t = (((node1x - x)*zoneW)^2 + ((node1y - y)*zoneH)^2)^0.5
-				if t > radius then
-					-- Merging this node will cause the merged point to be too far away
-					-- from an original point, so taboo it by making the weight infinity
-					-- And store a backup in the lower half of the table
-					weight[node2][node1] = weight[node1][node2]
-					weight[node1][node2] = inf
-					--taboo = taboo + 1
+		if not node1 then
+			break -- loop termination
+		end
+		local node2 = nn[node1]
+		if node2 < node1 then
+			node1, node2 = node2, node1 -- the lower index survives, to keep the route order
+		end
+
+		-- Step 3: Merge node2 into node1...
+		local m1, m2 = metadata[node1], metadata[node2]
+		local node1num, node2num = #m1, #m2
+		local totalnum = node1num + node2num
+		-- Calculate the new centroid of node1
+		local node1x = ( nx[node1] * node1num + nx[node2] * node2num ) / totalnum
+		local node1y = ( ny[node1] * node1num + ny[node2] * node2num ) / totalnum
+		-- Calculate the new coord from the new (x,y)
+		local coord = floor(node1x * 10000 + 0.5) * 10000 + floor(node1y * 10000 + 0.5)
+		node1x, node1y = floor(coord / 10000) / 10000, (coord % 10000) / 10000 -- to round off the coordinate
+		-- Check that the merged point is valid, ie. not too far away from any of the original points
+		local valid = true
+		for m = 1, 2 do
+			local members = m == 1 and m1 or m2
+			for i = 1, #members do
+				local c = members[i]
+				local x, y = floor(c / 10000) / 10000, (c % 10000) / 10000
+				if (((node1x - x)*zoneW)^2 + ((node1y - y)*zoneH)^2)^0.5 > radius then
+					valid = false
 					break
 				end
 			end
-			if weight[node1][node2] ~= inf then
-				for i = 1, node2num do
-					local coord = m2[i]
-					local x, y = floor(coord / 10000) / 10000, (coord % 10000) / 10000
-					local t = (((node1x - x)*zoneW)^2 + ((node1y - y)*zoneH)^2)^0.5
-					if t > radius then
-						weight[node2][node1] = weight[node1][node2]
-						weight[node1][node2] = inf
-						--taboo = taboo + 1
-						break
+			if not valid then break end
+		end
+
+		if not valid then
+			-- Merging would move the point too far away from an original point, so taboo
+			-- this pair until either of them changes
+			setTaboo(node1, node2)
+			findNearest(node1)
+			findNearest(node2)
+		else
+			-- Merge the metadata of node2 into node1
+			for i = 1, node2num do
+				m1[#m1+1] = m2[i]
+			end
+			-- Remove node2, and move node1 to its new coord
+			gridRemove(node1)
+			gridRemove(node2)
+			active[node2] = false
+			nn[node2], nnd[node2] = nil, inf
+			metadata[node2] = nil
+			coords[node1] = coord
+			nx[node1], ny[node1] = node1x, node1y
+			version[node1] = version[node1] + 1 -- this can untaboo nodes
+			gridAdd(node1)
+			findNearest(node1)
+			-- Update everything that wanted to merge with node1 or node2, or is now closer to node1
+			for k = 1, numNodes do
+				if active[k] and k ~= node1 then
+					if nn[k] == node1 or nn[k] == node2 then
+						findNearest(k)
+					else
+						local d = distance(k, node1)
+						if isCloser(k, node1, d) then
+							nn[k], nnd[k] = node1, d
+						end
 					end
 				end
 			end
-			if weight[node1][node2] ~= inf then
-				-- Merge the metadata of node2 into node1
-				for i = 1, node2num do
-					tinsert(m1, m2[i])
-				end
-				-- Set the new coord of node1
-				nodes[node1] = coord
-				-- Delete node2 from metadata[]
-				tremove(metadata, node2)
-				-- Delete node2 from nodes[]
-				tremove(nodes, node2)
-				-- Remove node2 from the weight table
-				for i = 1, numNodes do
-					tremove(weight[i], node2) -- remove column
-				end
-				tremove(weight, node2) -- remove row
-				-- Update number of nodes
-				numNodes = numNodes - 1
-				-- Update the weight table for all nodes relating to node1, this can untaboo nodes
-				for i = 1, node1-1 do
-					local coord = nodes[i]
-					local x, y = floor(coord / 10000) / 10000, (coord % 10000) / 10000
-					weight[i][node1] = (((node1x - x)*zoneW)^2 + ((node1y - y)*zoneH)^2)^0.5
-				end
-				for i = node1+1, numNodes do
-					local coord = nodes[i]
-					local x, y = floor(coord / 10000) / 10000, (coord % 10000) / 10000
-					weight[node1][i] = (((node1x - x)*zoneW)^2 + ((node1y - y)*zoneH)^2)^0.5
-				end
-			end
-		else
-			break -- loop termination
 		end
 
 		if nonblocking then
@@ -1045,16 +1359,26 @@ function TSP:ClusterRoute(nodes, zoneID, radius, nonblocking)
 		end
 	end
 
-	-- Get the new pathLength
-	local pathLength = weight[1][numNodes]
-	pathLength = pathLength == inf and weight[numNodes][1] or pathLength
-	for i = 1, numNodes-1 do
-		local w = weight[i][i+1]
-		pathLength = pathLength + (w == inf and weight[i+1][i] or w) -- use the backup in the lower half of the triangle if it was tabooed
+	-- Collect the remaining clusters in their original order
+	local newNodes, newMetadata = {}, {}
+	for i = 1, numNodes do
+		if active[i] then
+			newNodes[#newNodes+1] = coords[i]
+			newMetadata[#newMetadata+1] = metadata[i]
+		end
 	end
 
-	--ChatFrame1:AddMessage(taboo.." tabooed")
-	return nodes, metadata, pathLength
+	-- Get the new pathLength
+	local count = #newNodes
+	local pathLength = 0
+	for i = 1, count do
+		local c1, c2 = newNodes[i], newNodes[i % count + 1]
+		local x1, y1 = floor(c1 / 10000) / 10000, (c1 % 10000) / 10000
+		local x2, y2 = floor(c2 / 10000) / 10000, (c2 % 10000) / 10000
+		pathLength = pathLength + (((x2 - x1)*zoneW)^2 + ((y2 - y1)*zoneH)^2)^0.5
+	end
+
+	return newNodes, newMetadata, pathLength
 end
 
 function TSP:ClusterRouteBackground(nodes, zoneID, radius, finishFunc)
