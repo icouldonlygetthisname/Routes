@@ -2450,7 +2450,6 @@ do
 	local create_name = ""
 	local create_zones = {}
 	local create_zone
-	local last_zone = {}
 	local create_choices = {}
 	local create_data = {}
 	local empty_table = {}
@@ -2470,8 +2469,7 @@ do
 	local function get_source_values(info)
 		if not create_zone then return empty_table end
 		local create_data = create_data[info.arg]
-		if last_zone[info.arg] == create_zone then return create_data end
-		-- reuse table
+		-- always rebuild, so nodes gathered since the last look show up without a reload
 		wipe(create_data)
 		-- extract data from plugin
 		if Routes.plugins[info.arg].IsActive() then
@@ -2481,11 +2479,24 @@ do
 		if not next(create_data) then
 			create_data[ db.defaults.fake_data ..";;;" ] = L["No data found"]
 		end
-		last_zone[info.arg] = create_zone
-		-- Remove invalid entries due to updated data so we don't pairs over it during route creation
-		if create_choices[create_zone] then
-			for k in pairs(create_choices[create_zone]) do
-				if not create_data[k] then create_choices[create_zone][k] = nil end
+		-- Remove invalid entries due to updated data so we don't pairs over it during route creation.
+		-- Only touch this source's entries, and carry a selection over when just the node count changed.
+		local choices = create_choices[create_zone]
+		if choices then
+			local prefix = info.arg..";"
+			local current, moved = {}, {}
+			for k in pairs(create_data) do
+				current[k:match("^(.*);[^;]*$")] = k
+			end
+			for k, v in pairs(choices) do
+				if k:sub(1, #prefix) == prefix and not create_data[k] then
+					choices[k] = nil
+					local newkey = current[k:match("^(.*);[^;]*$")]
+					if v and newkey then moved[newkey] = v end
+				end
+			end
+			for k, v in pairs(moved) do
+				choices[k] = v
 			end
 		end
 		return create_data
@@ -2695,8 +2706,12 @@ do
 								local plugin = Routes.plugins[db_src]
 								if plugin.IsActive() then
 									local english_node, localized_node, type = plugin.AppendNodes(new_route.route, create_zone, db_type, node_type)
-									new_route.selection[english_node] = localized_node
-									new_route.db_type[type] = true
+									if english_node then
+										new_route.selection[english_node] = localized_node
+									end
+									if type then
+										new_route.db_type[type] = true
+									end
 								end
 							end
 						end
@@ -2742,7 +2757,9 @@ do
 				Routes:DrawWorldmapLines()
 				Routes:DrawMinimapLines(true)
 
-				-- clear stored name
+				-- clear stored name and node selection, so stale (possibly hidden) choices
+				-- don't get added to the next route created in this zone
+				wipe(create_choices[create_zone])
 				create_name = ""
 				create_zone = nil
 			end,
