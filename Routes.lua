@@ -2718,7 +2718,8 @@ do
 				local mapID = Routes.LZName[create_zone]
 				local mapIDKey = tostring(mapID)
 				db.routes[mapID][create_name] = nil -- overwrite old route
-				new_route.route = Routes.TSP:DecrossRoute(new_route.route)
+				-- give the route a sensible order straight away instead of lines all over the zone
+				new_route.route = Routes.TSP:QuickSolve(Routes.TSP:DecrossRoute(new_route.route), mapID)
 				deep_copy_table(db.routes[mapID][create_name], new_route)
 
 				db.routes[mapID][create_name].length = Routes.TSP:PathLength(new_route.route, mapID)

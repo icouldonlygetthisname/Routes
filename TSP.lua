@@ -492,6 +492,23 @@ local function SolveLarge(nodes, metadata, taboos, zoneID, path, nonblocking, st
 	return path, metadata, length, moves, startTime
 end
 
+-- TSP:QuickSolve(nodes, zoneID)
+--   Quickly finds a good (not optimal) order for a new route, used when creating routes so
+--   they start out without lines criss-crossing the zone. Takes milliseconds even for
+--   thousands of nodes, unlike SolveTSP() which can take a long time.
+-- Returns a new table with the reordered nodes, the original table is unmodified
+function TSP:QuickSolve(nodes, zoneID)
+	local zoneW, zoneH = Routes.Dragons:GetZoneSize(zoneID)
+	if #nodes < 4 or not zoneW or zoneW == 0 or not zoneH or zoneH == 0 then
+		return nodes
+	end
+	local copy = {}
+	for i = 1, #nodes do
+		copy[i] = nodes[i]
+	end
+	return (SolveLarge(copy, nil, {}, zoneID, {}, false, debugprofilestop()))
+end
+
 
 -----------------------------------
 -- TSP:SolveTSP(nodes, metadata, zoneID, parameters, path, nonblocking)
