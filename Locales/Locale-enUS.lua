@@ -258,182 +258,181 @@ L["FAQ_TEXT"] = [[
 |cffffd200
 When I try to create a route, it says no data is found. What am I doing wrong?
 |r
-It means exactly that: No data is found, mostly because the addon is not loaded or in standby mode. If you are using any of the |cffffff78Cartographer_<Profession>|r modules, then these modules must be loaded and active for data to be available.
-
-Note that |cffffff78Cartographer_<Profession>|r modules are all Load on Demand addons and require |cffffff78Cartographer_Professions|r to be enabled as it is the loading stub.
+Routes can only use nodes your data source addon knows about in that zone. Make sure the addon (|cffffff78GatherMate2|r, |cffffff78GatherLite|r, |cffffff78Gatherer|r or |cffffff78HandyNotes|r) is enabled, that it is ticked under |cffffff78Select sources of data|r on the |cffffff78Add|r page, and that it has nodes in the selected zone. For GatherMate2 you can import the WoWHead data from |cffffff78GatherMate2_Data|r in GatherMate2's own options.
 
 |cffffd200
-I made a route with Rich Adamantite Ore in it. When I find normal Adamantite Ore in the same place, GatherMate/Cartographer deletes the rich node and replaces it with a normal node. This removes the node from my route since it is contructed out of only rich nodes. What can I do?
+I gathered new nodes, why don't they show up on the Add page?
 |r
-1. You can make a route with both rich and normal Adamantite Ore in it.
-
-2. You can tell Routes not to automatically insert/delete nodes. This option is found in the root options of the Routes tree in the config screen.
+They do: the list of node types is refreshed every time it is shown, no reload is needed. If you have routes in that zone, new nodes are also added to them automatically, see |cffffff78Automatic route updating|r.
 
 |cffffd200
-Can you make a progress indicator on how long a background route optimization would take?
+I made a route with only some node types, but it contains other nodes as well.
 |r
-A progress bar is not possible for the optimization process as it is a non-linear algorithm. It works on a "multiple pass" basis, each pass improving on the previous pass until it reaches a point where the improvement made is too minimal and then it will stop.
-
-This is somewhat like the |cffffff78Windows XP Disk Defragmentation|r utility, and its progress bar is worthless because its only showing you the % of each pass, but it doesn't know how many passes it will take, it could be 3 passes, it could be 10 passes, it stops only when it thinks it has done enough. This is why in the |cffffff78Vista|r version, it no longer shows you a progress bar at all.
+A route is made of every node of each node type that is ticked. GatherMate2 also stores some variants of a node under one name (for example all the different kinds of Azeroot are stored as Azeroot), so they show up as one entry. Node type selections are cleared after each route is created, so earlier selections are not carried over.
 
 |cffffd200
-How does Routes perform its route optimization?
+How do I know how far a background optimization has got?
 |r
-Routes uses an algorithm called |cffffff78Ant Colony Optimization|r (ACO) which is a heuristic/probabilistic method of calculating optimal graphs based on observed real life ant behavior.
-
-ACO algorithms have been used to produce near-optimal solutions to the |cffffff78Traveling Salesman Problem|r (TSP). For more information, consult Google or Wikipedia.
+While it runs, the status bar at the bottom of the Routes window shows the current pass, how far it is through that pass and the length of the best route found so far. It is not possible to say up front how many passes it needs: each pass improves on the previous one, and it stops once a pass no longer finds a shorter route.
 
 |cffffd200
-What does the "Extra Optimization" option do?
+How does Routes optimize a route?
 |r
-By default, we only used ACO along with the standard |cffffff782-opt algorithm|r to optimize routes. Turning on "extra optimization" tells Routes to also use 2.5-opt, which is a specific subset of 3-opt. 2-opt is the process where pairs of edges are exchanged (A-B and C-D becomes A-C and B-D) in order to produce shorter routes.
+For routes with up to 724 nodes, Routes uses |cffffff78Ant Colony Optimization|r (ACO), a probabilistic method based on how real ants find short paths, combined with |cffffff782-opt|r. It finds near-optimal solutions to the |cffffff78Traveling Salesman Problem|r (TSP).
+
+ACO needs a table with an entry for every pair of nodes, which WoW cannot hold for more than 724 nodes. Larger routes are optimized with a nearest neighbour tour improved by 2-opt instead. It is much faster and usually within a few percent of ACO. The same fast method gives new routes their initial order.
+
+|cffffd200
+What does the "Extra optimization" option do?
+|r
+By default, ACO is combined with the |cffffff782-opt|r algorithm, which swaps pairs of edges (A-B and C-D become A-C and B-D) whenever that makes the route shorter. Extra optimization also uses 2.5-opt, which moves single nodes to a better place in the route. It takes about 40% longer for slightly better routes.
 
 |cffffd200
 What algorithm does node clustering use?
 |r
-We employ a Hierarchical Agglomerative Clustering algorithm using a greedy approach, so the output is deterministic.
+Hierarchical agglomerative clustering with a greedy approach: the two closest points within twice the cluster radius are repeatedly merged, as long as every original node stays within the cluster radius of the merged point. The result is always the same for the same route.
 
 |cffffd200
-I created a taboo region, attached it to a route, and optimized it. My route still flies through the taboo region. Why?
+I created a taboo region, attached it to a route, and optimized it. My route still goes through the taboo region. Why?
 |r
-It is not possible to always find a route that does not fly through a taboo region or sometimes highly unfeasible to do so.
-
-The user could potentially create taboo regions that split the map into impassable sections and regions, so the algorithm is simply biased not to pass through them if it is possible.
+It is not always possible, or sensible, to find a route that avoids a taboo region. Taboo regions could split the map into parts that can't be reached, so the optimization is only biased against crossing them.
 
 |cffffd200
 I've found a bug! Where do I report it?
 |r
-You can report bugs or give suggestions at |cffffff78http://forums.wowace.com/showthread.php?t=10369|r
+Report bugs and suggestions on the GitHub issue tracker at |cffffff78https://github.com/Nevcairiel/Routes/issues|r
 
-Alternatively, you can also find us on |cffffff78irc://irc.freenode.org/wowace|r
-
-When reporting a bug, make sure you include the |cffffff78steps on how to reproduce the bug|r, supply any |cffffff78error messages|r with stack traces if possible, give the |cffffff78revision number|r of Routes the problem occured in and state whether you are using an |cffffff78English client or otherwise|r.
+Include the |cffffff78steps to reproduce the bug|r, any |cffffff78error messages|r with stack traces (BugSack makes this easy), the |cffffff78version|r of Routes and whether you are using an |cffffff78English client or otherwise|r.
 
 |cffffd200
 Who wrote this cool addon?
 |r
-|cffffff78Xaros|r on EU Doomhammer Alliance & |cffffff78Xinhuan|r on US Blackrock Alliance did.
+|cffffff78Xaros|r on EU Doomhammer Alliance & |cffffff78Xinhuan|r on US Blackrock Alliance wrote it, and it is maintained by |cffffff78Nevcairiel|r.
 ]]
 L["OVERVIEW_TEXT"] = [[
-|cffffff78Routes|r is an addon designed to make gathering things more efficient. It does this by generating efficient farming routes based on what you want to farm, and using existing data from your |cffffff78GatherMate|r, |cffffff78Cartographer_<Profs>|r or |cffffff78Gatherer|r addons. These routes are then drawn on your maps and you follow them easily and quickly.
+|cffffff78Routes|r is an addon designed to make gathering things more efficient. It does this by generating efficient farming routes based on what you want to farm, using the node data from your |cffffff78GatherMate2|r, |cffffff78GatherLite|r, |cffffff78Gatherer|r or |cffffff78HandyNotes|r addons. These routes are then drawn on your world map, zone map and minimap so you can follow them easily and quickly.
 
 The |cffffff78Travelling Salesman Problem|r (TSP) is a traditional problem where given N cities and the distances between any pair of cities, find the shortest tour that visits all of the cities exactly once and return to the starting city. The same problem is applied to the gathering nodes in World of Warcraft to find the shortest possible route to visit every known spawn point in a circuit.
 ]]
 L["CREATE_ROUTE_TEXT"] = [[
-Creating a route has 4 simple steps. First, navigate to the |cffffff78Add|r section on the left side.
+To create a route, go to the |cffffff78Add|r section on the left side.
 
-|cffffff781.|r Type in a name for the route and press |cffffff78ENTER|r or click the |cffffff78OK|r button.
+|cffffff781.|r Type a name in |cffffff78Name of Route|r and press |cffffff78ENTER|r or click |cffffff78Okay|r.
 
-|cffffff782.|r Select a zone to create the route in.
+|cffffff782.|r Choose the zone in |cffffff78Select Zone|r. It starts out as the zone currently shown on your world map.
 
-|cffffff783.|r Select the sources of data.
+|cffffff783.|r Under |cffffff78Create Route from Data Sources|r, tick the addons to use in |cffffff78Select sources of data|r.
 
-|cffffff784.|r Select the type of data you wish to use in your route.
+|cffffff784.|r Tick the node types you want in the route in the list for each source, for example |cffffff78GatherMate2 Data|r. The number after each node type is how many of those nodes are known in the zone.
+
+|cffffff785.|r Click |cffffff78Create Route|r.
 
 
 |cffffd200Notes:|r
 
-* It is important to press the |cffffff78ENTER|r or click the |cffffff78OK|r button when entering the route name, otherwise the name will not be saved.
+* The name only counts once you press |cffffff78ENTER|r or click |cffffff78Okay|r, the |cffffff78Create Route|r buttons stay disabled until then. Using an existing name asks whether to overwrite that route.
 
-* If the route creation is successful, you will see pink lines running all over your world map in the selected zone. A route entry will be created on the left side under Routes for each route. This initial route is unoptimized and will need optimization.
+* The new route is drawn on your maps right away, and shows up under |cffffff78Routes|r on the left side, grouped by zone. It is given a quick initial order so it is usable straight away, but optimizing it gives a shorter route. See |cffffff78Optimizing a route|r.
+
+* |cffffff78Create Bare Route|r creates a route with just 3 points that doesn't use any data. You can then place the nodes yourself with the route's |cffffff78Edit Route Manually|r tab.
+
+* |cffffff78Recreate Route|r on a route's page builds the route again from the same node types, picking up any nodes found since.
 ]]
 L["OPTIMIZING_ROUTE_TEXT"] = [[
-New routes that are created start off unoptimized and just look like a haphazard mess of lines on the map. To optimize a route, navigate to your route on the left side. On the right side, there are 4 tabs, click on |cffffff78Optimize Route|r.
+New routes start out with a quick initial order. To make them shorter, go to your route under |cffffff78Routes|r on the left side and open the |cffffff78Optimize Route|r tab.
 
 Route optimization has 2 parts. The first is Route Clustering, the second is Route Optimizing.
 
-|cffffff781.|r Click the |cffffff78Cluster|r button to cluster the route.
+|cffffff781.|r Optionally set the |cffffff78Cluster Radius|r and click |cffffff78Cluster|r or |cffffff78Cluster (in Background)|r.
 
-|cffffff782.|r Click the |cffffff78Foreground|r OR |cffffff78Background|r button and wait.
+|cffffff782.|r Click |cffffff78Foreground|r or |cffffff78Background|r under |cffffff78Route Optimizing|r and wait.
 
 
 |cffffd200Notes:|r
 
-* Route clustering is optional. What it does is it takes nodes that are near each other within a specified distance and combines them into a single travel point. Clustering a route is a reversible process, no node data is lost.
+* Route clustering is optional. It combines nodes that are close to each other into a single travel point, so you visit them together. Clustering can be undone with |cffffff78Uncluster|r, no node data is lost. Clustered routes can't be edited manually.
 
-* Route optimization can be done either using foreground or the background options. Both methods are identical. The foreground method will use up all your available CPU time "hanging WoW" until it completes, while the background method does it much more slowly in the background without locking WoW.
+* Foreground and background optimization give the same results. Foreground freezes WoW until it is done, background runs while you keep playing at a lower frame rate, and shows its progress in the status bar at the bottom of the Routes window.
 
-* Generally speaking, use foreground if the number of nodes is small (less than 100), background if the number of nodes is big, otherwise you risk disconnecting from the WoW servers if optimization takes too long.
+* Use foreground for small routes (less than about 100 nodes) and background for bigger ones. A long foreground optimization can make WoW stop the script or even disconnect you.
 
-* Route generation uses an algorithm known as |cffffff78Ant Colony Optimization|r. This algorithm is based on observed real life ant behavior, and uses thousands of random numbers to simulate the ants and generate the routes.
+* Routes with up to 724 nodes are optimized with |cffffff78Ant Colony Optimization|r, which uses random numbers to simulate ants. Optimizing the same route again can give a different, possibly shorter, result. Routes keeps the shorter of the old and new route.
 
-* This means that route generation is random and optimizing the same initial route will give different results each time. You may repeatedly optimize a route in an attempt to find a better solution, Routes will not discard a shorter known solution.
+* Routes with more than 724 nodes use a faster method instead, see the |cffffff78FAQ|r. Clustering first reduces the number of nodes.
 
-* The other reason why we want the generated route to be random is because you don't want 1000 other people to have the exact same route as you right? Standard WowHead node data is downloadable fairly easily for the 3 gathering addons.
+* |cffffff78Extra optimization|r takes about 40% longer for slightly shorter routes. It only applies to routes with up to 724 nodes.
 
-* In its current implementation in Routes, the ACO algorithm is pruned fairly heavily in order to reduce execution time. Trying to solve an NP-Complete problem in a WoW sandbox using the Lua scripting language isn't the most ideal of things to do.
-
-* We make efforts to prevent the route from criss-crossing itself, but sometimes it happens and the algorithm doesn't catch it. If this happens, just optimize the route again.
+* If the optimized route still crosses itself somewhere, optimize it again.
 ]]
 L["CUSTOMIZING_ROUTE_TEXT"] = [[
-You can customize the display of your routes on the maps easily. The options comes in two parts. The |cffffff78Options|r section on the left contains global settings that apply to everything, the |cffffff78Line Settings|r options in each individual route is used to change settings to be different from the global settings.
+You can customize how your routes are drawn. The |cffffff78Options|r section on the left contains settings that apply to all routes, and the |cffffff78Line Settings|r tab of each route overrides them for that route.
 
-For map drawing, you may alter which maps Routes will draw your routes on as well as the default color and width of the lines. Additionally, you may change whether the lines on the minimap should have line gaps drawn so that they do not cover the minimap yellow tracking blips and icons placed there by |cffffff78GatherMate|r/|cffffff78Cartographer|r/|cffffff78Gatherer|r/|cffffff78HandyNotes|r.
+|cffffff78Options|r > |cffffff78Map Drawing|r sets which maps routes are drawn on (|cffffff78Worldmap|r, |cffffff78Minimap|r, |cffffff78Zone Map|r and |cffffff78Minimap when indoors|r), the width of the lines on each map and the color of normal and hidden routes. |cffffff78Draw line gaps|r leaves gaps in the minimap lines around nodes, so they don't cover the yellow tracking blips and the icons of your gathering addons.
 
-Each route can be changed to have a specific color and width in the route settings, as well as whether to hide a route from showing completely. This allows you to mark routes that you no longer wish to use, but neither wish to delete, from showing up on the maps. The |cffffff78Show hidden routes|r option in the general options can be used to override this individual route setting.
+In a route's |cffffff78Line Settings|r tab you can set its |cffffff78Line Color|r and widths, or tick |cffffff78Hide Route|r to stop drawing a route you don't want to use but don't want to delete either. |cffffff78Reset|r goes back to the global settings. The |cffffff78Show hidden routes|r option on the |cffffff78Map Drawing|r page draws hidden routes anyway, in the hidden route color.
 
-You may also opt to |cffffff78Auto show/hide|r routes based on the types of nodes that they contain, such as ore nodes or herbalism nodes, and whether such routes should show up on the maps only when you have the profession, only while you have the tracking ability active, always show, or never show. If a route contains multiple node types, the route will be shown as long as at least one of the node types satisfy the conditions to be shown.
+|cffffff78Options|r > |cffffff78Auto show/hide|r shows or hides routes based on the types of nodes in them. For each type (herbs, ore, fish, gas, treasure, archaeology, timber and notes) you can choose to always show the routes, only show them when you have the profession, only while the matching tracking ability is active, or never (not every choice exists for every type). A route with several node types is shown when any of its types should be shown.
 ]]
 L["CREATE_TABOOS_TEXT"] = [[
-|cffffff78Taboo regions|r are areas (2D polygons) on the World Map that you can define easily to tell Routes to ignore. When such areas are defined, Routes will actively ignore any nodes that lie in these areas, and take extra effort such that the generated route does not cross these areas. This is very useful for marking places that are out of the way such as floating islands, caves, tall mountains, enemy towns and so on.
+|cffffff78Taboo regions|r are areas (2D polygons) on the world map that you want Routes to stay out of. Nodes inside a taboo region are left out of routes that use it, and optimizing tries to keep the route from crossing it. This is very useful for places that are out of the way, such as floating islands, caves, tall mountains, enemy towns and so on.
 
 Taboo regions are created using the following steps:
 
-|cffffff781.|r Navigate to the |cffffff78Taboos|r root tree on the left of the configuration screen.
+|cffffff781.|r Go to the |cffffff78Taboos|r section on the left side.
 
-|cffffff782.|r Type in a name for the taboo region and press |cffffff78ENTER|r or click the |cffffff78OK|r button.
+|cffffff782.|r Type a name in |cffffff78Name of Taboo|r and press |cffffff78ENTER|r or click |cffffff78Okay|r.
 
-|cffffff783.|r Select a zone in the dropdown to create the taboo region in.
+|cffffff783.|r Choose the zone in |cffffff78Select Zone|r.
 
 |cffffff784.|r Click |cffffff78Create Taboo|r.
 
-|cffffff785.|r Navigate to the newly created taboo on the left of the configuration tree in the |cffffff78Taboos|r tree.
+|cffffff785.|r Select the new taboo region under |cffffff78Taboos|r on the left side.
 
-|cffffff786.|r Click the |cffffff78Edit taboo region|r button.
+|cffffff786.|r Click |cffffff78Edit taboo region|r.
 
-|cffffff787.|r Open the World Map and navigate to the correct map where the taboo region is if necessary.
+|cffffff787.|r Open the world map and go to the taboo region's zone if needed.
 
-|cffffff788.|r You should see a triangular shaded region on the world map. Edit the taboo region by
-a) |cffffff78Dragging|r the nodes of the polygon;
-b) Inserting a node into the polygon by |cffffff78left-clicking|r an in-between node;
-c) Deleting a node from the polygon by |cffffff78right-clicking|r an existing node.
+|cffffff788.|r You will see a triangular shaded region on the map. Change its shape by
+a) |cffffff78Dragging|r the points of the polygon;
+b) |cffffff78Left-clicking|r a point in between two points to add it to the polygon;
+c) |cffffff78Right-clicking|r a point to remove it.
 
-|cffffff789.|r Click |cffffff78Save taboo edit|r to save your changes, or |cffffff78Cancel taboo edit|r to abandon your changes.
+|cffffff789.|r Click |cffffff78Save taboo edit|r to save your changes, or |cffffff78Cancel taboo edit|r to throw them away.
 
-Taboo regions may cross over itself and overlap and contain as many nodes as you want. This means you can create very complicated and detailed taboo regions should you so desire to do so.
+Taboo regions can cross over themselves and have as many points as you like, so you can make them as detailed as you want.
 
 
 |cffffd200Notes:|r
 
-* Once a taboo region is created, you may attach the taboo region to an existing route inside the individual route's configuration. You will need to reoptimize the route after attaching or removing taboo regions from a route.
+* To use a taboo region, tick it in the |cffffff78Taboos|r tab of a route. Optimize the route again after adding or removing taboo regions.
 
-* Editing a taboo region will affect all routes that use it, likewise deleting a taboo region will remove it from all routes that use it.
+* Editing a taboo region affects all routes that use it, and deleting a taboo region removes it from all routes that use it.
 ]]
 L["WAYPOINTS_INTEGRATION_TEXT"] = [[
-Routes comes with direct support for |cffffff78Cartographer_Waypoints|r or |cffffff78TomTom|r, using the waypoints system so that you can quickly travel along your routes without getting lost amidst the lines.
+Routes can use |cffffff78TomTom|r's waypoint arrow to guide you along your routes, so you don't get lost among the lines.
 
-Using waypoints is easy. Simply go to a zone with a visible route, and click the |cffffff78Start using waypoints|r button. This tells Routes to find the closest node in the closest visible route and queues this node in |cffffff78Cartographer_Waypoints|r or |cffffff78TomTom|r. A graphical arrow then appears in the middle of the screen indicating the direction and distance to reach the waypoint.
+Go to a zone with a visible route, open |cffffff78Options|r > |cffffff78Waypoints (TomTom)|r and click |cffffff78Start using TomTom|r. Routes finds the closest node of the visible routes in your zone and sets it as a TomTom waypoint. TomTom's arrow then shows the direction and distance to it.
 
-When you reach the node, Routes will automatically queue the next node in the route and so on. Click |cffffff78Stop using waypoints|r to remove the currently queued node and |cffffff78Change directions|r to change the direction of nodes that are being queued.
+When you get within the |cffffff78Waypoint hit distance|r of the node, Routes sets the next node in the route as the waypoint, and so on. Click |cffffff78Stop using TomTom|r to remove the waypoint, and |cffffff78Change direction|r to go through the route the other way.
 
-To help with using waypoints, you can easily setup keybinds to start/stop and change directions in the Routes configuration screen itself or in ESC -> Key Bindings. Additionally, |cffffff78FuBar_RoutesFu|r has quick access menus for this as well.
+You can set keybinds for start, stop and change direction on the same page, or in the game's Key Bindings under |cffffff78Routes|r.
 
 
 |cffffd200Notes:|r
 
-* The waypoint integration modules are disabled if the support addons are not found.
+* The |cffffff78Waypoints (TomTom)|r options are disabled when TomTom isn't loaded.
+
+* TomTom 4.2.6 to 4.2.11 never told Routes when a waypoint was reached, so the next node wasn't set. Update TomTom if the arrow stops at the first node.
 ]]
 L["AUTOMATIC_UPDATE_TEXT"] = [[
-Routes will automatically update your routes and insert/remove nodes as required when you use |cffffff78GatherMate|r or |cffffff78Cartographer_<Profs>|r as your data sources. |cffffff78Gatherer/HandyNotes|r is not supported as it currently does not support callbacks.
+Routes can keep your routes up to date with your data source addon. When |cffffff78GatherMate2|r finds a new node, Routes adds it to the routes in that zone that contain that node type, at the best place in the route. When a node is deleted in GatherMate2, Routes removes it from those routes too. |cffffff78GatherLite|r only reports new nodes, and |cffffff78Gatherer|r and |cffffff78HandyNotes|r can't be updated automatically.
 
-When you find a new node in either of these addons, Routes will search the zone for existing routes with that node type and insert it in the best location in the route. SImilarly, when you delete a node in those addons, Routes will also remove the node from the relevant routes.
+Moving a node is handled as deleting it and adding it again in its new place, which is also how GatherMate2 does it.
 
-Moving an existing node's location by a few yards is handled by a node deletion followed by an node insertion. In fact, this is exactly how GatherMate and Cartographer_<Profs> handles it internally.
+To turn automatic updating on or off:
 
-To stop this automatic updating behavior, you can turn off the option by following these steps:
+|cffffff781.|r Click |cffffff78Routes|r on the left side of the Routes window.
 
-|cffffff781.|r Navigate to the |cffffff78Routes|r root tree on the left side of the configuration screen.
-
-|cffffff782.|r Uncheck the boxes for each data source.
+|cffffff782.|r Tick or untick each data source.
 ]]
 -- vim: ts=4 noexpandtab
