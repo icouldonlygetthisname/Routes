@@ -980,8 +980,43 @@ local taboo_zone_args_desc_table = {
 ------------------------------------------------------------------------------------------------------
 -- General event functions
 
+-- AceGUI's Label truncates long text to a single line on current clients, which cut off
+-- the help file and route descriptions. Use a Label that explicitly word wraps instead.
+local WRAP_LABEL = "Routes-WrappingLabel"
+do
+	local AceGUI = LibStub("AceGUI-3.0")
+	local version = 1
+	if (AceGUI:GetWidgetVersion(WRAP_LABEL) or 0) < version then
+		AceGUI:RegisterWidgetType(WRAP_LABEL, function()
+			local widget = AceGUI:Create("Label")
+			widget.type = WRAP_LABEL
+			local OnAcquire = widget.OnAcquire
+			widget.OnAcquire = function(self)
+				OnAcquire(self)
+				self.label:SetWordWrap(true)
+				self.label:SetMaxLines(0)
+			end
+			return widget
+		end, version)
+	end
+end
+
+local function UseWrappingLabels(opts)
+	if type(opts.args) ~= "table" then return end
+	for _, v in pairs(opts.args) do
+		if type(v) == "table" then
+			if v.type == "description" and not v.dialogControl then
+				v.dialogControl = WRAP_LABEL
+			end
+			UseWrappingLabels(v)
+		end
+	end
+end
+
 local function ChatCommand(input)
 	if not input or input:trim() == "" then
+		-- done on every open, as route and taboo entries get added at runtime
+		UseWrappingLabels(options)
 		LibStub("AceConfigDialog-3.0"):Open("Routes")
 	else
 		LibStub("AceConfigCmd-3.0").HandleCommand(Routes, "routes", "Routes", input)
