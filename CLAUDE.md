@@ -7,7 +7,7 @@ Upstream addon by Nevcairiel. This repo is a real GitHub fork: `origin` = github
 - Upstream's own git history is the baseline. There are no `Baseline: ... (upstream, unmodified)` commits. Rebase or merge onto upstream tags.
 - Fixes aren't marked with a `--Local fix`-style comment. Each is its own commit on `fixes`, and the README table lists them.
 - The repo has no `Libs/` (they come from `.pkgmeta`). Never delete `Libs/` in a game folder when copying the repo in.
-- Retail game folder: a copy of `fixes` with `@project-version@` replaced by `fork-fixes-<hash>`. Dry-run robocopy (`/L`) first.
+- Retail game folder: a copy of `fixes` with `@project-version@` replaced by `fork-fixes-<hash>`. Dry-run robocopy (`/L`) first. Exclude the placeholder locales (`Locale-deDE/esES/frFR/koKR/ptBR/zhCN/zhTW.lua`, which hold only `@localization@`): the game folder has the CurseForge translations. README.md has the exact command.
 
 ## WoW Forever
 
