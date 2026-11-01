@@ -33,16 +33,18 @@ The copy in `_forever_\Interface\AddOns\Routes` is built locally, together with 
 E:\VScode\_tools\build-forever.ps1 -Deploy
 ```
 
-It exports the committed HEAD with `git archive`, adds `Libs/` from the retail copy, and replaces `Libs/HereBeDragons` with upstream master from `_tools\HereBeDragons`. Then it sets the TOC version to `<git describe>-forever` and installs the result. Any previous Forever copy goes to `%TEMP%\forever-backup\`. Without `-Deploy` it only builds into `%TEMP%\forever-build`. The GatherMate2 README has the details.
+It exports the committed HEAD with `git archive`, adds `Libs/` from the retail copy, and replaces `Libs/HereBeDragons` with upstream master from `_tools\HereBeDragons`. Then it sets the TOC version to `<git describe>-forever` and installs the result. Any previous Forever copy goes to `%TEMP%\forever-backup\`. Without `-Deploy` it only builds into `%TEMP%\forever-build`. The GatherMate2 README has the details. The build is English (and Russian) only, because the other locale files are `@localization@` placeholders.
 
 ## Workflow (retail)
 
-The retail game folder (`_retail_\Interface\AddOns\Routes`) is a copy of this branch, not a CurseForge package. `@project-version@` in `Routes.toc` and `Routes.lua` is replaced with `fork-fixes-<commit>`, and `Libs/` comes from an earlier package (the repo has no `Libs/`).
+The retail game folder (`_retail_\Interface\AddOns\Routes`) is a copy of this branch, not a CurseForge package. `@project-version@` in `Routes.toc` and `Routes.lua` is replaced with `fork-fixes-<commit>`. `Libs/` and the translated locales come from an earlier CurseForge package. The repo has no `Libs/`, and its `Locale-deDE/esES/frFR/koKR/ptBR/zhCN/zhTW.lua` hold only a `@localization@` placeholder, so copying them over would leave those clients untranslated. `Locale-enUS.lua` and `Locale-ruRU.lua` are complete in the repo.
 
 To update it:
 
-1. Dry run, to catch edits made in the game folder: `robocopy E:\VScode\Routes "<AddOns>\Routes" /E /XD .git .github .vscode /XF .gitignore .editorconfig .pkgmeta README.md CLAUDE.md /L`.
-2. Run the same command without `/L`. `Libs/` in the game folder is left alone.
+1. Dry run, to catch edits made in the game folder: `robocopy E:\VScode\Routes "<AddOns>\Routes" /E /XD .git .github .vscode /XF .gitignore .editorconfig .pkgmeta README.md CLAUDE.md Locale-deDE.lua Locale-esES.lua Locale-frFR.lua Locale-koKR.lua Locale-ptBR.lua Locale-zhCN.lua Locale-zhTW.lua /L`.
+2. Run the same command without `/L`. `Libs/` and the translated locales in the game folder are left alone.
 3. Replace `@project-version@` in `Routes.toc` and `Routes.lua` with `fork-fixes-<short hash>`.
+
+New locale keys only reach the translated locales through a CurseForge package. Until then those clients fall back to the English text.
 
 After an upstream release, rebase or merge `fixes` onto the new tag and update this README.
