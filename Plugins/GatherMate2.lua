@@ -86,10 +86,16 @@ local function AppendNodes(node_list, zone, db_type, node_type)
 
 		-- return the node_type for auto-adding
 		local translatednode = GatherMate2:GetNameForNode(db_type, node_type)
-		for k, v in pairs(LN) do
-			if v == translatednode then -- get the english name
-				return k, v, translate_db_type[db_type]
+		if LN then
+			for k, v in pairs(LN) do
+				if v == translatednode then -- get the english name
+					return k, v, translate_db_type[db_type]
+				end
 			end
+		end
+		-- node missing from the locale table (e.g. newly added nodes), use the name we have
+		if translatednode then
+			return translatednode, translatednode, translate_db_type[db_type]
 		end
 	end
 end

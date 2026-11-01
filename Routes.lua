@@ -980,8 +980,43 @@ local taboo_zone_args_desc_table = {
 ------------------------------------------------------------------------------------------------------
 -- General event functions
 
+-- AceGUI's Label truncates long text to a single line on current clients, which cut off
+-- the help file and route descriptions. Use a Label that explicitly word wraps instead.
+local WRAP_LABEL = "Routes-WrappingLabel"
+do
+	local AceGUI = LibStub("AceGUI-3.0")
+	local version = 1
+	if (AceGUI:GetWidgetVersion(WRAP_LABEL) or 0) < version then
+		AceGUI:RegisterWidgetType(WRAP_LABEL, function()
+			local widget = AceGUI:Create("Label")
+			widget.type = WRAP_LABEL
+			local OnAcquire = widget.OnAcquire
+			widget.OnAcquire = function(self)
+				OnAcquire(self)
+				self.label:SetWordWrap(true)
+				self.label:SetMaxLines(0)
+			end
+			return widget
+		end, version)
+	end
+end
+
+local function UseWrappingLabels(opts)
+	if type(opts.args) ~= "table" then return end
+	for _, v in pairs(opts.args) do
+		if type(v) == "table" then
+			if v.type == "description" and not v.dialogControl then
+				v.dialogControl = WRAP_LABEL
+			end
+			UseWrappingLabels(v)
+		end
+	end
+end
+
 local function ChatCommand(input)
 	if not input or input:trim() == "" then
+		-- done on every open, as route and taboo entries get added at runtime
+		UseWrappingLabels(options)
 		LibStub("AceConfigDialog-3.0"):Open("Routes")
 	else
 		LibStub("AceConfigCmd-3.0").HandleCommand(Routes, "routes", "Routes", input)
@@ -1997,12 +2032,7 @@ function ConfigHandler:DoForeground(info)
 	local zone = tonumber(info[2])
 	local route = Routes.routekeys[zone][ info[3] ]
 	local t = db.routes[zone][route]
-	if #t.route > 724 then
-		-- Lua has 4mb limit on table size. 725x725 will result in a table of size 525625
-		-- 524288 (or 2^19) is the max as 8 bytes per entry will give exactly 4 Mb
-		Routes:Print(L["TOO_MANY_NODES_ERROR"])
-		return
-	end
+	-- routes with more than 724 nodes are handled by a different solver inside SolveTSP()
 	local taboos = {}
 	for tabooname, used in pairs(t.taboos) do
 		if used then
@@ -2028,10 +2058,6 @@ function ConfigHandler:DoBackground(info)
 	local zone = tonumber(info[2])
 	local route = Routes.routekeys[zone][ info[3] ]
 	local t = db.routes[zone][route]
-	if #t.route > 724 then
-		Routes:Print(L["TOO_MANY_NODES_ERROR"])
-		return
-	end
 	local taboos = {}
 	for tabooname, used in pairs(t.taboos) do
 		if used then
@@ -2450,7 +2476,6 @@ do
 	local create_name = ""
 	local create_zones = {}
 	local create_zone
-	local last_zone = {}
 	local create_choices = {}
 	local create_data = {}
 	local empty_table = {}
@@ -2470,8 +2495,7 @@ do
 	local function get_source_values(info)
 		if not create_zone then return empty_table end
 		local create_data = create_data[info.arg]
-		if last_zone[info.arg] == create_zone then return create_data end
-		-- reuse table
+		-- always rebuild, so nodes gathered since the last look show up without a reload
 		wipe(create_data)
 		-- extract data from plugin
 		if Routes.plugins[info.arg].IsActive() then
@@ -2481,11 +2505,24 @@ do
 		if not next(create_data) then
 			create_data[ db.defaults.fake_data ..";;;" ] = L["No data found"]
 		end
-		last_zone[info.arg] = create_zone
-		-- Remove invalid entries due to updated data so we don't pairs over it during route creation
-		if create_choices[create_zone] then
-			for k in pairs(create_choices[create_zone]) do
-				if not create_data[k] then create_choices[create_zone][k] = nil end
+		-- Remove invalid entries due to updated data so we don't pairs over it during route creation.
+		-- Only touch this source's entries, and carry a selection over when just the node count changed.
+		local choices = create_choices[create_zone]
+		if choices then
+			local prefix = info.arg..";"
+			local current, moved = {}, {}
+			for k in pairs(create_data) do
+				current[k:match("^(.*);[^;]*$")] = k
+			end
+			for k, v in pairs(choices) do
+				if k:sub(1, #prefix) == prefix and not create_data[k] then
+					choices[k] = nil
+					local newkey = current[k:match("^(.*);[^;]*$")]
+					if v and newkey then moved[newkey] = v end
+				end
+			end
+			for k, v in pairs(moved) do
+				choices[k] = v
 			end
 		end
 		return create_data
@@ -2695,8 +2732,12 @@ do
 								local plugin = Routes.plugins[db_src]
 								if plugin.IsActive() then
 									local english_node, localized_node, type = plugin.AppendNodes(new_route.route, create_zone, db_type, node_type)
-									new_route.selection[english_node] = localized_node
-									new_route.db_type[type] = true
+									if english_node then
+										new_route.selection[english_node] = localized_node
+									end
+									if type then
+										new_route.db_type[type] = true
+									end
 								end
 							end
 						end
@@ -2712,7 +2753,8 @@ do
 				local mapID = Routes.LZName[create_zone]
 				local mapIDKey = tostring(mapID)
 				db.routes[mapID][create_name] = nil -- overwrite old route
-				new_route.route = Routes.TSP:DecrossRoute(new_route.route)
+				-- give the route a sensible order straight away instead of lines all over the zone
+				new_route.route = Routes.TSP:QuickSolve(Routes.TSP:DecrossRoute(new_route.route), mapID)
 				deep_copy_table(db.routes[mapID][create_name], new_route)
 
 				db.routes[mapID][create_name].length = Routes.TSP:PathLength(new_route.route, mapID)
@@ -2742,7 +2784,9 @@ do
 				Routes:DrawWorldmapLines()
 				Routes:DrawMinimapLines(true)
 
-				-- clear stored name
+				-- clear stored name and node selection, so stale (possibly hidden) choices
+				-- don't get added to the next route created in this zone
+				wipe(create_choices[create_zone])
 				create_name = ""
 				create_zone = nil
 			end,
