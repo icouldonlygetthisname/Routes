@@ -17,6 +17,7 @@ Based on upstream `master` at `upstream/master` as of 2026-11-01 (latest tag `v1
 | `5bcca57` | Option descriptions word wrap instead of being cut to one line. |
 | `b88c18a` | Help text rewritten to match the current options. |
 | `5aa0f90` | TOC: add WoW Forever (`16001`). |
+| `655def4` | WoW Forever uses the modern minimap code path (`WoW90`). Forever reports interface `16001` but runs the mainline client. On the Classic path, `MINIMAP_UPDATE_ZOOM` calls `Minimap:SetZoom`, which fires `MINIMAP_UPDATE_ZOOM` again, so the minimap lines were redrawn every frame (about 1 ms per frame, charged by the profiler to whichever addon's AceEvent copy loaded first, e.g. GatherMate2). |
 
 ## WoW Forever
 
